@@ -220,9 +220,7 @@ registry.example.com:
     images-by-tag-regex:
         nginx: ^1\.13\.[12]-alpine-perl$
     images-by-semver:
-        alpine:
-            - "3.12 - 3.13"
-            - ">= 3.17"
+        alpine: ">= 3.12.0"
     credentials:
         username: john
         password: this is a secret
@@ -243,7 +241,7 @@ This will copy the following images:
 - Repository `registry.example.com/redis`: images tagged "1.0" and "2.0" along with image with digest "sha256:0000000000000000000000000000000011111111111111111111111111111111".
 - Repository `registry.example.com/nginx`: images tagged "1.13.1-alpine-perl" and "1.13.2-alpine-perl".
 - Repository `quay.io/coreos/etcd`: images tagged "latest".
-- Repository `registry.example.com/alpine`: all images with tags satisfying either the "3.12 - 3.13" condition ("3.12.0", "3.12.1"...) or the ">= 3.17" ("3.17.5", "3.19.0", "4.0.0"...)
+- Repository `registry.example.com/alpine`: all images with tags match the semantic version constraint ">= 3.12.0" ("3.12.0, "3.12.1", ... ,"4.0.0", ...)
 
 The full list of possible semantic version comparisons can be found in the
 upstream library's documentation:

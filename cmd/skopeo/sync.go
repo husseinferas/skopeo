@@ -72,7 +72,7 @@ type tlsVerifyConfig struct {
 type registrySyncConfig struct {
 	Images           map[string][]string    // Images map images name to slices with the images' references (tags, digests)
 	ImagesByTagRegex map[string]string      `yaml:"images-by-tag-regex"` // Images map images name to regular expression with the images' tags
-	ImagesBySemver   map[string][]string    `yaml:"images-by-semver"`    // ImagesBySemver maps images name with a list of semver constraints (e.g. '>=3.14') to match images' tags to
+	ImagesBySemver   map[string]string      `yaml:"images-by-semver"`    // ImagesBySemver maps images name with a list of semver constraints (e.g. '>=3.14') to match images' tags to
 	Credentials      types.DockerAuthConfig // Username and password used to authenticate with the registry
 	TLSVerify        tlsVerifyConfig        `yaml:"tls-verify"` // TLS verification mode (enabled by default)
 	CertDir          string                 `yaml:"cert-dir"`   // Path to the TLS certificates of the registry
@@ -444,6 +444,7 @@ func filterSourceReferences(sys *types.SystemContext, registryName string, colle
 		for _, ref := range sourceReferences {
 			if filter(logger, ref) {
 				filteredSourceReferences = append(filteredSourceReferences, ref)
+				continue
 			}
 		}
 
@@ -473,7 +474,7 @@ func tagRegexFilterCollection(collection map[string]string) (filterCollection, e
 		}
 
 		f := func(logger *logrus.Entry, sourceReference types.ImageReference) bool {
-			logger.Infof("Start filtering using the regular expression: %v", tagRegex)
+			logger.Infof("Start filtering using the regular expression: %v for %v", tagRegex, repoName)
 			tagged, isTagged := sourceReference.DockerReference().(reference.Tagged)
 			if !isTagged {
 				logger.Errorf("Internal error, reference %s does not have a tag, skipping", sourceReference.DockerReference())
@@ -490,17 +491,13 @@ func tagRegexFilterCollection(collection map[string]string) (filterCollection, e
 // semverFilterCollection converts a map of (repository name, array of semver constraints) pairs
 // into a filterCollection, which is a map of (repository name, filter function)
 // pairs.
-func semverFilterCollection(collection map[string][]string) (filterCollection, error) {
+func semverFilterCollection(collection map[string]string) (filterCollection, error) {
 	filters := filterCollection{}
 
-	for repoName, constraintStringList := range collection {
-		var constraints []*semver.Constraints
-		for _, constraintString := range constraintStringList {
-			constraint, err := semver.NewConstraint(constraintString)
-			if err != nil {
-				return nil, err
-			}
-			constraints = append(constraints, constraint)
+	for repoName, constraintString := range collection {
+		constraint, err := semver.NewConstraint(constraintString)
+		if err != nil {
+			return nil, err
 		}
 
 		f := func(logger *logrus.Entry, sourceReference types.ImageReference) bool {
@@ -514,12 +511,7 @@ func semverFilterCollection(collection map[string][]string) (filterCollection, e
 				logger.Tracef("Tag %q cannot be parsed as semver, skipping", tagged.Tag())
 				return false
 			}
-			for _, constraint := range constraints {
-				if !constraint.Check(tagVersion) {
-					return false
-				}
-			}
-			return true
+			return constraint.Check(tagVersion)
 		}
 
 		filters[repoName] = f

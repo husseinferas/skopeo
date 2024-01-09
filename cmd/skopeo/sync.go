@@ -405,9 +405,9 @@ func imagesToCopyFromRegistry(registryName string, cfg registrySyncConfig, sourc
 
 // filterFunc is a function used to limit the initial set of image references
 // using tags, patterns, semver, etc.
-type filterFunc func(*logrus.Entry, []types.ImageReference) []types.ImageReference
+type filterFunc func(*logrus.Entry, types.ImageReference) bool
 
-// filterCollection is a map of image names to filter functions.
+// filterCollection is a map of repository names to filter functions.
 type filterCollection map[string]filterFunc
 
 // filterSourceReferences lists tags for images specified in the collection and
@@ -415,12 +415,13 @@ type filterCollection map[string]filterFunc
 // It returns a list of repoDescriptors.
 func filterSourceReferences(sys *types.SystemContext, registryName string, collection filterCollection) []repoDescriptor {
 	var repoDescList []repoDescriptor
-	for imageName, filter := range collection {
+	for repoName, filter := range collection {
 		logger := logrus.WithFields(logrus.Fields{
-			"repo":     imageName,
+			"repo":     repoName,
 			"registry": registryName,
 		})
-		repoRef, err := parseRepositoryReference(fmt.Sprintf("%s/%s", registryName, imageName))
+
+		repoRef, err := parseRepositoryReference(fmt.Sprintf("%s/%s", registryName, repoName))
 		if err != nil {
 			logger.Error("Error parsing repository name, skipping")
 			logrus.Error(err)
@@ -439,60 +440,60 @@ func filterSourceReferences(sys *types.SystemContext, registryName string, colle
 			continue
 		}
 
-		sourceReferences = filter(logger, sourceReferences)
-		if len(sourceReferences) == 0 {
+		var filteredSourceReferences []types.ImageReference
+		for _, ref := range sourceReferences {
+			if filter(logger, ref) {
+				filteredSourceReferences = append(filteredSourceReferences, ref)
+			}
+		}
+
+		if len(filteredSourceReferences) == 0 {
 			logger.Warnf("No refs to sync found")
 			continue
 		}
 
 		repoDescList = append(repoDescList, repoDescriptor{
-			ImageRefs: sourceReferences,
+			ImageRefs: filteredSourceReferences,
 			Context:   sys,
 		})
 	}
 	return repoDescList
 }
 
-// tagRegexFilterCollection converts a map of (image name, tag regex) pairs
-// into a filterCollection, which is a map of (image name, filter function)
+// tagRegexFilterCollection converts a map of (repository name, tag regex) pairs
+// into a filterCollection, which is a map of (repository name, filter function)
 // pairs.
 func tagRegexFilterCollection(collection map[string]string) (filterCollection, error) {
 	filters := filterCollection{}
 
-	for imageName, tagRegex := range collection {
+	for repoName, tagRegex := range collection {
 		pattern, err := regexp.Compile(tagRegex)
 		if err != nil {
 			return nil, err
 		}
 
-		f := func(logger *logrus.Entry, sourceReferences []types.ImageReference) []types.ImageReference {
-			var filteredSourceReferences []types.ImageReference
+		f := func(logger *logrus.Entry, sourceReference types.ImageReference) bool {
 			logger.Infof("Start filtering using the regular expression: %v", tagRegex)
-			for _, sReference := range sourceReferences {
-				tagged, isTagged := sReference.DockerReference().(reference.Tagged)
-				if !isTagged {
-					logger.Errorf("Internal error, reference %s does not have a tag, skipping", sReference.DockerReference())
-					continue
-				}
-				if pattern.MatchString(tagged.Tag()) {
-					filteredSourceReferences = append(filteredSourceReferences, sReference)
-				}
+			tagged, isTagged := sourceReference.DockerReference().(reference.Tagged)
+			if !isTagged {
+				logger.Errorf("Internal error, reference %s does not have a tag, skipping", sourceReference.DockerReference())
+				return false
 			}
-			return filteredSourceReferences
+			return pattern.MatchString(tagged.Tag())
 		}
-		filters[imageName] = f
+		filters[repoName] = f
 	}
 
 	return filters, nil
 }
 
-// semverFilterCollection converts a map of (image name, array of semver constraints) pairs
-// into a filterCollection, which is a map of (image name, filter function)
+// semverFilterCollection converts a map of (repository name, array of semver constraints) pairs
+// into a filterCollection, which is a map of (repository name, filter function)
 // pairs.
 func semverFilterCollection(collection map[string][]string) (filterCollection, error) {
 	filters := filterCollection{}
 
-	for imageName, constraintStringList := range collection {
+	for repoName, constraintStringList := range collection {
 		var constraints []*semver.Constraints
 		for _, constraintString := range constraintStringList {
 			constraint, err := semver.NewConstraint(constraintString)
@@ -502,31 +503,26 @@ func semverFilterCollection(collection map[string][]string) (filterCollection, e
 			constraints = append(constraints, constraint)
 		}
 
-		f := func(logger *logrus.Entry, sourceReferences []types.ImageReference) []types.ImageReference {
-			var filteredSourceReferences []types.ImageReference
-			logger.WithField("semver", constraintStringList).Info("Start filtering using semver constraints")
-			for _, sReference := range sourceReferences {
-				tagged, isTagged := sReference.DockerReference().(reference.Tagged)
-				if !isTagged {
-					logger.Errorf("Internal error, reference %s does not have a tag, skipping", sReference.DockerReference())
-					continue
-				}
-				tagVersion, err := semver.NewVersion(tagged.Tag())
-				if err != nil {
-					logger.Tracef("Tag %q cannot be parsed as semver, skipping", tagged.Tag())
-					continue
-				}
-				for _, constraint := range constraints {
-					if constraint.Check(tagVersion) {
-						filteredSourceReferences = append(filteredSourceReferences, sReference)
-						break
-					}
+		f := func(logger *logrus.Entry, sourceReference types.ImageReference) bool {
+			tagged, isTagged := sourceReference.DockerReference().(reference.Tagged)
+			if !isTagged {
+				logger.Errorf("Internal error, reference %s does not have a tag, skipping", sourceReference.DockerReference())
+				return false
+			}
+			tagVersion, err := semver.NewVersion(tagged.Tag())
+			if err != nil {
+				logger.Tracef("Tag %q cannot be parsed as semver, skipping", tagged.Tag())
+				return false
+			}
+			for _, constraint := range constraints {
+				if !constraint.Check(tagVersion) {
+					return false
 				}
 			}
-			return filteredSourceReferences
+			return true
 		}
 
-		filters[imageName] = f
+		filters[repoName] = f
 	}
 
 	return filters, nil

@@ -444,7 +444,6 @@ func filterSourceReferences(sys *types.SystemContext, registryName string, colle
 		for _, ref := range sourceReferences {
 			if filter(logger, ref) {
 				filteredSourceReferences = append(filteredSourceReferences, ref)
-				continue
 			}
 		}
 
@@ -474,7 +473,6 @@ func tagRegexFilterCollection(collection map[string]string) (filterCollection, e
 		}
 
 		f := func(logger *logrus.Entry, sourceReference types.ImageReference) bool {
-			logger.Infof("Start filtering using the regular expression: %v for %v", tagRegex, repoName)
 			tagged, isTagged := sourceReference.DockerReference().(reference.Tagged)
 			if !isTagged {
 				logger.Errorf("Internal error, reference %s does not have a tag, skipping", sourceReference.DockerReference())

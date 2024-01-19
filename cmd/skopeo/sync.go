@@ -72,7 +72,7 @@ type tlsVerifyConfig struct {
 type registrySyncConfig struct {
 	Images           map[string][]string    // Images map images name to slices with the images' references (tags, digests)
 	ImagesByTagRegex map[string]string      `yaml:"images-by-tag-regex"` // Images map images name to regular expression with the images' tags
-	ImagesBySemver   map[string]string      `yaml:"images-by-semver"`    // ImagesBySemver maps images name with a list of semver constraints (e.g. '>=3.14') to match images' tags to
+	ImagesBySemver   map[string]string      `yaml:"images-by-semver"`    // ImagesBySemver maps a repository to a semver constraint (e.g. '>=3.14') to match images' tags to
 	Credentials      types.DockerAuthConfig // Username and password used to authenticate with the registry
 	TLSVerify        tlsVerifyConfig        `yaml:"tls-verify"` // TLS verification mode (enabled by default)
 	CertDir          string                 `yaml:"cert-dir"`   // Path to the TLS certificates of the registry
